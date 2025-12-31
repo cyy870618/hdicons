@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  hd-icons:
+    image: ${DOCKER_USERNAME:-hdicons}/hdicons:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: hd-icons
+    restart: unless-stopped
+    ports:
+      - "50560:50560"
+    volumes:
+      - ./icons:/app/icons
+    environment:
+      # 原有环境变量
+      - TITLE=小迪的图标库
+      # - ALL_PROXY=http://192.168.1.1:7890
+      # - CUSTOM_URL=https://raw.githubusercontent.com/xushier/HD-Icons/refs/heads/main
+      
+      # 新增环境变量
+      # - GITHUB_PROXY_URL=https://ghproxy.com/https://github.com
+      - DEFAULT_USERNAME=admin
+      - DEFAULT_PASSWORD=hdicons
+      
+      # JWT 密钥（生产环境请修改）
+      - JWT_SECRET_KEY=your-production-secret-key

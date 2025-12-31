@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.dev
+    container_name: hd-icons-backend-dev
+    ports:
+      - "50560:50560"
+    volumes:
+      - ../backend:/app
+      - ../icons:/app/icons
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - TITLE=HD-Icons 开发版
+      - DEFAULT_USERNAME=admin
+      - DEFAULT_PASSWORD=admin123
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile.dev
+    container_name: hd-icons-frontend-dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:50560
