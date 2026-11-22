@@ -170,8 +170,11 @@ async function loadConfig(env) {
 
 const BUILTIN_CATEGORIES = [
   { name: 'border-radius', label: '圆角' },
-  { name: 'circle', label: '圆形' },
-  { name: 'svg', label: '矢量' },
+  { name: 'AI', label: 'AI' },
+  { name: 'Docker', label: 'Docker' },
+  { name: 'NAS', label: 'NAS' },
+  { name: 'PT', label: 'PT' },
+  { name: '云服务', label: '云服务' },
   { name: 'upload', label: '上传' },
 ];
 const BUILTIN_NAMES = BUILTIN_CATEGORIES.map((c) => c.name);
@@ -244,8 +247,37 @@ async function loadUpstreamIcons() {
   return iconCache.list || [];
 }
 
+const IMPORTED_PATH = 'data/imported-icons.json';
+let importedCache = { list: null, ts: 0 };
+
+async function loadImportedIcons(env) {
+  if (importedCache.list && Date.now() - importedCache.ts < 10 * 60 * 1000) return importedCache.list;
+  try {
+    const f = await ghGetFile(env, IMPORTED_PATH);
+    if (f) {
+      const data = JSON.parse(f.text);
+      const arr = Array.isArray(data && data.icons) ? data.icons : [];
+      const list = arr.map((item) => {
+        const url = String(item.url || '');
+        const filename = decodeURIComponent(url.split('/').pop() || '');
+        if (!filename) return null;
+        return {
+          name: String(item.name || filename).replace(/\.[^.]+$/, ''),
+          filename,
+          category: String(item.type || item.category || 'border-radius'),
+          type: 'imported',
+        };
+      }).filter(Boolean);
+      importedCache = { list, ts: Date.now() };
+      return list;
+    }
+  } catch (e) { /* fall back to upstream */ }
+  return null;
+}
+
 async function loadIcons(env) {
-  const upstream = await loadUpstreamIcons();
+  const imported = await loadImportedIcons(env);
+  const upstream = imported && imported.length ? imported : await loadUpstreamIcons();
   let uploads = [];
   if (ghReady(env)) {
     const files = await ghListDir(env, 'icons/upload');
@@ -280,8 +312,9 @@ function iconUrls(icon, origin) {
   const category = icon.orig_category || icon.category;
   let original;
   if (icon.type === 'upload') original = `/icons/upload/${icon.filename}`;
+  else if (icon.type === 'imported') original = `/icons/lib/${encodeURIComponent(category)}/${encodeURIComponent(icon.filename)}`;
   else original = `/icons/HD-Icons/${category}/${icon.filename}`;
-  const thumb = icon.filename.toLowerCase().endsWith('.svg') ? original : `/icons/thumbnails/${icon.type === 'upload' ? 'upload' : category}/${icon.filename}`;
+  const thumb = icon.type === 'imported' ? original : (icon.filename.toLowerCase().endsWith('.svg') ? original : `/icons/thumbnails/${icon.type === 'upload' ? 'upload' : category}/${icon.filename}`);
   return { original_url: origin + original, thumbnail_url: origin + thumb, copy_url: origin + original };
 }
 
