@@ -168,7 +168,49 @@ async function loadConfig(env) {
   return base;
 }
 
-const CATEGORIES = ['border-radius', 'circle', 'svg', 'upload'];
+const BUILTIN_CATEGORIES = [
+  { name: 'border-radius', label: '圆角' },
+  { name: 'circle', label: '圆形' },
+  { name: 'svg', label: '矢量' },
+  { name: 'upload', label: '上传' },
+];
+const BUILTIN_NAMES = BUILTIN_CATEGORIES.map((c) => c.name);
+const CATEGORIES_PATH = 'data/categories.json';
+const OVERRIDES_PATH = 'data/overrides.json';
+
+async function loadCategories(env) {
+  try {
+    const f = await ghGetFile(env, CATEGORIES_PATH);
+    if (f) {
+      const data = JSON.parse(f.text);
+      if (data && Array.isArray(data.categories)) {
+        return data.categories
+          .filter((c) => c && c.name && !BUILTIN_NAMES.includes(c.name))
+          .map((c) => ({ name: String(c.name), label: String(c.label || c.name), builtin: false }));
+      }
+    }
+  } catch (e) { /* ignore */ }
+  return [];
+}
+
+async function saveCategories(env, categories) {
+  await ghPutFile(env, CATEGORIES_PATH, enc.encode(JSON.stringify({ categories }, null, 2)), 'chore: 更新自定义分类');
+}
+
+async function loadOverrides(env) {
+  try {
+    const f = await ghGetFile(env, OVERRIDES_PATH);
+    if (f) {
+      const data = JSON.parse(f.text);
+      if (data && typeof data === 'object' && !Array.isArray(data)) return data;
+    }
+  } catch (e) { /* ignore */ }
+  return {};
+}
+
+async function saveOverrides(env, overrides) {
+  await ghPutFile(env, OVERRIDES_PATH, enc.encode(JSON.stringify(overrides, null, 2)), 'chore: 更新图标覆盖信息');
+}
 
 let iconCache = { list: null, ts: 0 };
 
@@ -214,11 +256,32 @@ async function loadIcons(env) {
   return upstream.concat(uploads);
 }
 
+const iconKey = (icon) => `${icon.category}/${icon.filename}`;
+
+function applyOverrides(icons, overrides, includeHidden = false) {
+  const list = [];
+  for (const icon of icons) {
+    const key = iconKey(icon);
+    const ov = overrides[key] || {};
+    if (ov.hidden && !includeHidden) continue;
+    list.push({
+      key,
+      name: ov.name || icon.name,
+      filename: icon.filename,
+      type: icon.type,
+      category: ov.category || icon.category,
+      orig_category: icon.category,
+    });
+  }
+  return list;
+}
+
 function iconUrls(icon, origin) {
+  const category = icon.orig_category || icon.category;
   let original;
   if (icon.type === 'upload') original = `/icons/upload/${icon.filename}`;
-  else original = `/icons/HD-Icons/${icon.category}/${icon.filename}`;
-  const thumb = icon.filename.toLowerCase().endsWith('.svg') ? original : `/icons/thumbnails/${icon.type === 'upload' ? 'upload' : icon.category}/${icon.filename}`;
+  else original = `/icons/HD-Icons/${category}/${icon.filename}`;
+  const thumb = icon.filename.toLowerCase().endsWith('.svg') ? original : `/icons/thumbnails/${icon.type === 'upload' ? 'upload' : category}/${icon.filename}`;
   return { original_url: origin + original, thumbnail_url: origin + thumb, copy_url: origin + original };
 }
 
@@ -228,6 +291,22 @@ function segments(params) {
   const p = params && params.path;
   if (Array.isArray(p)) return p.filter(Boolean);
   return String(p || '').split('/').filter(Boolean);
+}
+
+function requireAdmin(user) {
+  return !!user && user.role === 'admin';
+}
+
+function slugify(label) {
+  return String(label || '')
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function allCategoryDefs(custom) {
+  return BUILTIN_CATEGORIES.map((c) => ({ ...c, builtin: true })).concat(custom.map((c) => ({ ...c, builtin: false })));
 }
 
 async function handleApi(request, env, path) {
@@ -248,7 +327,7 @@ async function handleApi(request, env, path) {
       const hash = await hashPass(password, found.salt || '');
       if (hash === found.password_hash) matched = found;
     }
-    if (!matched && username === (env.ADMIN_USER || 'admin') && password === (env.ADMIN_PASS || 'hdicons')) {
+    if (!matched && !(found && found.password_hash) && username === (env.ADMIN_USER || 'admin') && password === (env.ADMIN_PASS || 'hdicons')) {
       matched = found || { id: 1, username, role: 'admin', created_at: new Date().toISOString() };
     }
     if (!matched) return fail('用户名或密码错误', 401);
@@ -266,15 +345,100 @@ async function handleApi(request, env, path) {
   if (path === 'auth/change-password' && method === 'POST') {
     if (!user) return fail('未登录', 401);
     const body = await request.json().catch(() => ({}));
-    const pwd = String(body.new_password || '');
+    const currentPwd = String(
+      body.currentPassword !== undefined ? body.currentPassword
+        : (body.current_password !== undefined ? body.current_password : (body.old_password !== undefined ? body.old_password : '')),
+    );
+    const pwd = String(
+      body.newPassword !== undefined ? body.newPassword : (body.new_password !== undefined ? body.new_password : ''),
+    );
     if (pwd.length < 6) return fail('密码长度至少6位');
     const data = await loadUsers(env);
     const target = data.users.find((u) => u.id === user.id) || data.users.find((u) => u.username === user.username);
+    let valid = false;
+    if (target && target.password_hash) {
+      valid = (await hashPass(currentPwd, target.salt || '')) === target.password_hash;
+    } else {
+      valid = currentPwd === (env.ADMIN_PASS || 'hdicons');
+    }
+    if (!valid) return fail('当前密码错误', 400);
     const salt = 'cf' + Math.random().toString(36).slice(2, 10);
     const rec = { id: user.id, username: user.username, role: user.role, salt, password_hash: await hashPass(pwd, salt), created_at: new Date().toISOString() };
     if (target) Object.assign(target, rec); else data.users.push(rec);
     await saveUsers(env, data);
     return ok(null, '密码修改成功');
+  }
+
+  // categories
+  if (path === 'categories' && method === 'GET') {
+    const icons = applyOverrides(await loadIcons(env), await loadOverrides(env));
+    const custom = await loadCategories(env);
+    const counts = {};
+    for (const icon of icons) counts[icon.category] = (counts[icon.category] || 0) + 1;
+    const items = allCategoryDefs(custom).map((c) => ({ ...c, count: counts[c.name] || 0 }));
+    return ok({ items, total: icons.length });
+  }
+
+  if (path === 'categories' && method === 'POST') {
+    if (!requireAdmin(user)) return fail('权限不足', 403);
+    if (!ghReady(env)) return fail('未配置 GITHUB_TOKEN / GITHUB_REPO', 503);
+    const body = await request.json().catch(() => ({}));
+    const label = String(body.label || '').trim();
+    if (!label) return fail('分组名称不能为空');
+    if (label.length > 40) return fail('分组名称过长');
+    const custom = await loadCategories(env);
+    if (custom.some((c) => c.label.toLowerCase() === label.toLowerCase())) return fail('分组名称已存在');
+    let base = slugify(label);
+    if (!base) {
+      let n = custom.length + 1;
+      while (allCategoryDefs(custom).some((c) => c.name === `group-${n}`)) n += 1;
+      base = `group-${n}`;
+    } else if (allCategoryDefs(custom).some((c) => c.name === base)) {
+      let n = 2;
+      while (allCategoryDefs(custom).some((c) => c.name === `${base}-${n}`)) n += 1;
+      base = `${base}-${n}`;
+    }
+    custom.push({ name: base, label, builtin: false });
+    await saveCategories(env, custom);
+    return ok({ name: base, label, builtin: false, count: 0 }, '分组创建成功');
+  }
+
+  if (path.startsWith('categories/') && method === 'PUT') {
+    if (!requireAdmin(user)) return fail('权限不足', 403);
+    if (!ghReady(env)) return fail('未配置 GITHUB_TOKEN / GITHUB_REPO', 503);
+    const name = decodeURIComponent(path.slice('categories/'.length));
+    const body = await request.json().catch(() => ({}));
+    const label = String(body.label || '').trim();
+    if (!label) return fail('分组名称不能为空');
+    if (label.length > 40) return fail('分组名称过长');
+    const custom = await loadCategories(env);
+    const idx = custom.findIndex((c) => c.name === name);
+    if (idx < 0) return fail('分组不存在或不可修改');
+    if (custom.some((c) => c.name !== name && c.label.toLowerCase() === label.toLowerCase())) return fail('分组名称已存在');
+    custom[idx].label = label;
+    await saveCategories(env, custom);
+    return ok(custom[idx], '分组已重命名');
+  }
+
+  if (path.startsWith('categories/') && method === 'DELETE') {
+    if (!requireAdmin(user)) return fail('权限不足', 403);
+    if (!ghReady(env)) return fail('未配置 GITHUB_TOKEN / GITHUB_REPO', 503);
+    const name = decodeURIComponent(path.slice('categories/'.length));
+    const custom = await loadCategories(env);
+    if (!custom.some((c) => c.name === name)) return fail('分组不存在或不可删除');
+    await saveCategories(env, custom.filter((c) => c.name !== name));
+    const overrides = await loadOverrides(env);
+    let changed = false;
+    for (const key of Object.keys(overrides)) {
+      const ov = overrides[key];
+      if (ov && ov.category === name) {
+        delete ov.category;
+        changed = true;
+        if (!ov.name && !ov.hidden && !ov.category) delete overrides[key];
+      }
+    }
+    if (changed) await saveOverrides(env, overrides);
+    return ok(null, '分组已删除');
   }
 
   // icons
@@ -283,14 +447,14 @@ async function handleApi(request, env, path) {
     const category = u.searchParams.get('category') || 'all';
     const search = (u.searchParams.get('search') || '').trim().toLowerCase();
     const page = Math.max(1, parseInt(u.searchParams.get('page') || '1', 10) || 1);
-    const pageSize = Math.max(1, parseInt(u.searchParams.get('page_size') || '100', 10) || 100);
+    const pageSize = Math.min(5000, Math.max(1, parseInt(u.searchParams.get('page_size') || '100', 10) || 100));
 
-    let list = await loadIcons(env);
+    let list = applyOverrides(await loadIcons(env), await loadOverrides(env));
     if (category !== 'all') list = list.filter((i) => i.category === category);
-    if (search) list = list.filter((i) => i.filename.toLowerCase().includes(search));
+    if (search) list = list.filter((i) => i.filename.toLowerCase().includes(search) || i.name.toLowerCase().includes(search));
     const total = list.length;
     const items = list.slice((page - 1) * pageSize, page * pageSize).map((i) => ({
-      name: i.name, filename: i.filename, type: i.type, category: i.category, ...iconUrls(i, origin),
+      name: i.name, filename: i.filename, type: i.type, category: i.category, orig_category: i.orig_category, key: i.key, ...iconUrls(i, origin),
     }));
     return ok({ items, total, page, page_size: pageSize, total_pages: Math.ceil(total / pageSize) });
   }
@@ -302,6 +466,11 @@ async function handleApi(request, env, path) {
     try { form = await request.formData(); } catch (e) { return fail('没有文件上传'); }
     const files = form.getAll('file').filter((f) => f && typeof f !== 'string');
     if (!files.length) return fail('没有选择文件');
+    const target = String(form.get('category') || '').trim();
+    if (target && target !== 'upload') {
+      const custom = await loadCategories(env);
+      if (!allCategoryDefs(custom).some((c) => c.name === target)) return fail('目标分组不存在');
+    }
     const uploaded = [];
     for (const f of files) {
       if (!ALLOWED.test(f.name)) continue;
@@ -310,18 +479,100 @@ async function handleApi(request, env, path) {
       uploaded.push(f.name);
     }
     if (!uploaded.length) return fail('文件格式不支持');
+    if (target && target !== 'upload') {
+      const overrides = await loadOverrides(env);
+      for (const name of uploaded) {
+        const key = `upload/${name}`;
+        overrides[key] = { ...(overrides[key] || {}), category: target };
+      }
+      await saveOverrides(env, overrides);
+    }
     return ok({ uploaded }, `成功上传 ${uploaded.length} 个文件`);
+  }
+
+  if (path === 'icons/rename' && method === 'POST') {
+    if (!requireAdmin(user)) return fail('权限不足', 403);
+    if (!ghReady(env)) return fail('未配置 GITHUB_TOKEN / GITHUB_REPO', 503);
+    const body = await request.json().catch(() => ({}));
+    const key = String(body.key || '');
+    const name = String(body.name || '').trim();
+    if (!key) return fail('缺少图标标识');
+    if (!name) return fail('名称不能为空');
+    if (name.length > 60) return fail('名称过长');
+    const icons = await loadIcons(env);
+    const target = icons.find((i) => iconKey(i) === key);
+    if (!target) return fail('图标不存在', 404);
+    const overrides = await loadOverrides(env);
+    const ov = { ...(overrides[key] || {}) };
+    if (name === target.name) delete ov.name; else ov.name = name;
+    if (ov.name || ov.category || ov.hidden) overrides[key] = ov; else delete overrides[key];
+    await saveOverrides(env, overrides);
+    return ok({ key, name }, '重命名成功');
+  }
+
+  if (path === 'icons/move' && method === 'POST') {
+    if (!requireAdmin(user)) return fail('权限不足', 403);
+    if (!ghReady(env)) return fail('未配置 GITHUB_TOKEN / GITHUB_REPO', 503);
+    const body = await request.json().catch(() => ({}));
+    const keys = Array.isArray(body.keys) ? body.keys.map(String) : [];
+    const category = String(body.category || '').trim();
+    if (!keys.length) return fail('请选择图标');
+    if (!category) return fail('请选择目标分组');
+    const custom = await loadCategories(env);
+    if (!allCategoryDefs(custom).some((c) => c.name === category)) return fail('目标分组不存在');
+    const icons = await loadIcons(env);
+    const overrides = await loadOverrides(env);
+    let moved = 0;
+    for (const key of keys) {
+      const target = icons.find((i) => iconKey(i) === key);
+      if (!target) continue;
+      const ov = { ...(overrides[key] || {}) };
+      if (category === target.category) delete ov.category; else ov.category = category;
+      if (ov.name || ov.category || ov.hidden) overrides[key] = ov; else delete overrides[key];
+      moved += 1;
+    }
+    if (!moved) return fail('图标不存在', 404);
+    await saveOverrides(env, overrides);
+    return ok({ moved, category }, `已移动 ${moved} 个图标`);
+  }
+
+  if (path === 'icons/batch-delete' && method === 'POST') {
+    if (!requireAdmin(user)) return fail('权限不足', 403);
+    if (!ghReady(env)) return fail('未配置 GITHUB_TOKEN / GITHUB_REPO', 503);
+    const body = await request.json().catch(() => ({}));
+    const keys = Array.isArray(body.keys) ? body.keys.map(String) : [];
+    if (!keys.length) return fail('请选择图标');
+    const icons = await loadIcons(env);
+    const overrides = await loadOverrides(env);
+    let deleted = 0;
+    let hidden = 0;
+    for (const key of keys) {
+      const target = icons.find((i) => iconKey(i) === key);
+      if (!target) continue;
+      if (target.category === 'upload') {
+        try {
+          await ghDeleteFile(env, `icons/upload/${target.filename}`, `chore: 删除图标 ${target.filename}`);
+          deleted += 1;
+        } catch (e) { /* 文件可能已删除 */ }
+        delete overrides[key];
+      } else {
+        overrides[key] = { ...(overrides[key] || {}), hidden: true };
+        hidden += 1;
+      }
+    }
+    await saveOverrides(env, overrides);
+    return ok({ deleted, hidden }, `已删除 ${deleted + hidden} 个图标`);
   }
 
   if (path === 'icons/json' && method === 'POST') {
     if (!user) return fail('未登录', 401);
     const body = await request.json().catch(() => ({}));
     const base = body.base_url || `https://raw.githubusercontent.com/${UPSTREAM_REPO}/main`;
-    const list = await loadIcons(env);
+    const list = applyOverrides(await loadIcons(env), await loadOverrides(env));
     return ok({
       name: 'HD-Icons',
       description: 'By 小迪',
-      icons: list.map((i) => ({ name: i.name, url: `${base}/${i.category}/${i.filename}` })),
+      icons: list.map((i) => ({ name: i.name, url: `${base}/${i.orig_category}/${i.filename}` })),
     });
   }
 
