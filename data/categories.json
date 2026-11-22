@@ -1,9 +1,3 @@
 {
-  "categories": [
-    {
-      "name": "testgroup",
-      "label": "TestGroup",
-      "builtin": false
-    }
-  ]
+  "categories": []
 }
