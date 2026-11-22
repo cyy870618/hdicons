@@ -1,6 +1,7 @@
 {
   "border-radius/115-drive-1.png": {
     "category": "testgroup",
-    "name": "TestRename"
+    "name": "TestRename",
+    "hidden": true
   }
 }
