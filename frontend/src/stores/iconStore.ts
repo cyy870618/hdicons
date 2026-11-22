@@ -1,22 +1,24 @@
 import { create } from 'zustand'
 
 type DisplayMode = 'grid' | 'list' | 'waterfall'
-type Category = 'all' | 'border-radius' | 'circle' | 'svg' | 'upload'
+type Category = string
 
 interface IconState {
   displayMode: DisplayMode
   category: Category
   searchQuery: string
   isLocalMode: boolean
-  selectedIds: Set<string>
+  selectMode: boolean
+  selectedKeys: Set<string>
   setDisplayMode: (mode: DisplayMode) => void
   setCategory: (category: Category) => void
   setSearchQuery: (query: string) => void
   toggleLocalMode: () => void
-  selectIcon: (id: string) => void
-  deselectIcon: (id: string) => void
-  selectAll: (ids: string[]) => void
-  deselectAll: () => void
+  setSelectMode: (enabled: boolean) => void
+  toggleSelectMode: () => void
+  toggleKey: (key: string) => void
+  selectAll: (keys: string[]) => void
+  clearSelected: () => void
 }
 
 export const useIconStore = create<IconState>((set) => ({
@@ -24,21 +26,23 @@ export const useIconStore = create<IconState>((set) => ({
   category: 'all',
   searchQuery: '',
   isLocalMode: true,
-  selectedIds: new Set(),
+  selectMode: false,
+  selectedKeys: new Set(),
   setDisplayMode: (mode) => set({ displayMode: mode }),
   setCategory: (category) => set({ category }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   toggleLocalMode: () => set((state) => ({ isLocalMode: !state.isLocalMode })),
-  selectIcon: (id) => set((state) => {
-    const newSet = new Set(state.selectedIds)
-    newSet.add(id)
-    return { selectedIds: newSet }
+  setSelectMode: (enabled) => set(() => ({ selectMode: enabled, selectedKeys: new Set<string>() })),
+  toggleSelectMode: () => set((state) => ({
+    selectMode: !state.selectMode,
+    selectedKeys: new Set<string>(),
+  })),
+  toggleKey: (key) => set((state) => {
+    const next = new Set(state.selectedKeys)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return { selectedKeys: next }
   }),
-  deselectIcon: (id) => set((state) => {
-    const newSet = new Set(state.selectedIds)
-    newSet.delete(id)
-    return { selectedIds: newSet }
-  }),
-  selectAll: (ids) => set({ selectedIds: new Set(ids) }),
-  deselectAll: () => set({ selectedIds: new Set() }),
+  selectAll: (keys) => set({ selectedKeys: new Set(keys) }),
+  clearSelected: () => set({ selectedKeys: new Set<string>() }),
 }))
