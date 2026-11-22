@@ -24,28 +24,59 @@ api.interceptors.response.use(
   }
 )
 
+export interface IconItem {
+  name: string
+  filename: string
+  type: string
+  category: string
+  orig_category: string
+  key: string
+  original_url: string
+  thumbnail_url: string
+  copy_url: string
+}
+
+export interface CategoryItem {
+  name: string
+  label: string
+  builtin: boolean
+  count: number
+}
+
 export const authApi = {
   login: (username: string, password: string) =>
     api.post('/auth/login', { username, password }),
   me: () => api.get('/auth/me'),
-  changePassword: (newPassword: string) =>
-    api.post('/auth/change-password', { new_password: newPassword }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.post('/auth/change-password', { currentPassword, newPassword }),
 }
 
 export const iconApi = {
-  getIcons: (params?: { category?: string; search?: string; page?: number }) =>
+  getIcons: (params?: { category?: string; search?: string; page?: number; page_size?: number }) =>
     api.get('/icons', { params }),
   deleteIcon: (filename: string) => api.delete(`/icons/${filename}`),
-  uploadIcons: (files: File[]) => {
+  uploadIcons: (files: File[], category?: string) => {
     const formData = new FormData()
     files.forEach((file) => formData.append('file', file))
+    if (category) formData.append('category', category)
     return api.post('/icons/upload', formData)
   },
+  renameIcon: (key: string, name: string) => api.post('/icons/rename', { key, name }),
+  moveIcons: (keys: string[], category: string) => api.post('/icons/move', { keys, category }),
+  batchDeleteIcons: (keys: string[]) => api.post('/icons/batch-delete', { keys }),
   generateJson: (iconIds?: string[], baseUrl?: string) =>
     api.post('/icons/json', { icon_ids: iconIds, base_url: baseUrl }),
   checkUpdate: () => api.get('/check-update'),
   retryThumbnails: () => api.post('/thumbnails/retry'),
   getThumbnailStatus: () => api.get('/thumbnails/status'),
+}
+
+export const categoryApi = {
+  getCategories: () => api.get('/categories'),
+  createCategory: (label: string) => api.post('/categories', { label }),
+  updateCategory: (name: string, label: string) =>
+    api.put(`/categories/${encodeURIComponent(name)}`, { label }),
+  deleteCategory: (name: string) => api.delete(`/categories/${encodeURIComponent(name)}`),
 }
 
 export const userApi = {
