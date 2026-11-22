@@ -312,7 +312,7 @@ function iconUrls(icon, origin) {
   const category = icon.orig_category || icon.category;
   let original;
   if (icon.type === 'upload') original = `/icons/upload/${icon.filename}`;
-  else if (icon.type === 'imported') original = `/icons/lib/${encodeURIComponent(category)}/${encodeURIComponent(icon.filename)}?v=2`;
+  else if (icon.type === 'imported') original = `/icons/lib/${encodeURIComponent(category)}/${encodeURIComponent(icon.filename)}?v=3`;
   else original = `/icons/HD-Icons/${category}/${icon.filename}`;
   const thumb = icon.type === 'imported' ? original : (icon.filename.toLowerCase().endsWith('.svg') ? original : `/icons/thumbnails/${icon.type === 'upload' ? 'upload' : category}/${icon.filename}`);
   return { original_url: origin + original, thumbnail_url: origin + thumb, copy_url: origin + original };
