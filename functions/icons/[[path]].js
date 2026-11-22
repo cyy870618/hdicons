@@ -12,7 +12,7 @@ export async function onRequest(context) {
 
   let target = null;
   if (segs[0] === 'lib' && segs.length >= 3) {
-    target = `https://raw.githubusercontent.com/${env.GITHUB_REPO}/main/icons/imported/${segs.slice(1).map(encodeURIComponent).join('/')}`;
+    target = `https://raw.githubusercontent.com/${env.GITHUB_REPO}/main/icons/imported/${segs.slice(1).map((s) => encodeURIComponent(decodeURIComponent(s))).join('/')}`;
   } else if (segs[0] === 'HD-Icons' && segs.length >= 3) {
     target = `https://raw.githubusercontent.com/${UPSTREAM_REPO}/main/${segs.slice(1).join('/')}`;
   } else if (segs[0] === 'thumbnails' && segs.length >= 3) {
