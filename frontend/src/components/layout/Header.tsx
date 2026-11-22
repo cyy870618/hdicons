@@ -77,8 +77,9 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
-      <div className="container mx-auto flex h-14 items-center gap-3 px-4">
+    <>
+      <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
+        <div className="container mx-auto flex h-14 items-center gap-3 px-4">
         <Link to="/" className="flex items-center gap-2 text-xl font-bold text-primary shrink-0">
           <span>{title}</span>
           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium">{total}</span>
@@ -164,6 +165,7 @@ export function Header() {
           )}
         </div>
       </div>
+      </header>
 
       <Modal open={pwdOpen} title="修改密码" onClose={() => setPwdOpen(false)}>
         <form onSubmit={submitPwd} className="space-y-3">
@@ -202,6 +204,6 @@ export function Header() {
           </div>
         </form>
       </Modal>
-    </header>
+    </>
   )
 }
