@@ -3,13 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Upload, Trash2, X } from 'lucide-react'
 import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
-import { iconApi } from '../services/api'
+import { iconApi, categoryApi, type CategoryItem } from '../services/api'
 import { useAuthStore } from '../stores/authStore'
 import { toast } from 'sonner'
 
 export function UploadPage() {
   const [showUpload, setShowUpload] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [targetCategory, setTargetCategory] = useState('upload')
   const { isAuthenticated, user } = useAuthStore()
   const queryClient = useQueryClient()
   
@@ -17,16 +18,24 @@ export function UploadPage() {
     queryKey: ['icons', 'upload'],
     queryFn: () => iconApi.getIcons({ category: 'upload' }),
   })
+
+  const { data: catData } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoryApi.getCategories(),
+  })
+  const categories: CategoryItem[] = (catData as any)?.data?.items || []
   
   const icons = (data as any)?.data?.items || []
   
   const uploadMutation = useMutation({
-    mutationFn: (files: File[]) => iconApi.uploadIcons(files),
+    mutationFn: (files: File[]) => iconApi.uploadIcons(files, targetCategory),
     onSuccess: () => {
       toast.success('上传成功')
       setSelectedFiles([])
       setShowUpload(false)
       queryClient.invalidateQueries({ queryKey: ['icons'] })
+      queryClient.invalidateQueries({ queryKey: ['categories'] })
+      queryClient.invalidateQueries({ queryKey: ['icons-total'] })
     },
     onError: (err: any) => {
       toast.error(err.message || '上传失败')
@@ -102,6 +111,19 @@ export function UploadPage() {
               <Button variant="ghost" size="icon" onClick={() => setShowUpload(false)}>
                 <X className="h-4 w-4" />
               </Button>
+            </div>
+            
+            <div className="space-y-2 mb-4">
+              <label className="text-sm font-medium">目标分类</label>
+              <select
+                className="w-full h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={targetCategory}
+                onChange={(e) => setTargetCategory(e.target.value)}
+              >
+                {categories.map((cat) => (
+                  <option key={cat.name} value={cat.name}>{cat.label}</option>
+                ))}
+              </select>
             </div>
             
             <div
