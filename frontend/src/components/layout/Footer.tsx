@@ -6,7 +6,7 @@ export function Footer() {
       <div className="container mx-auto px-4">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <a href="https://github.com/xushier/HD-Icons" target="_blank" rel="noopener noreferrer" 
+            <a href="https://github.com/cyy870618/hdicons" target="_blank" rel="noopener noreferrer"
                className="text-muted-foreground hover:text-primary transition-colors">
               <Github className="h-5 w-5" />
             </a>
@@ -22,7 +22,7 @@ export function Footer() {
             </a>
           </div>
           <p className="text-sm text-muted-foreground">
-            Copyright © 2025 Powered By 小迪同学 All Rights Reserved.
+            Copyright © 2025 Powered By 小迪同学 All Rights Reserved. 部署于 Cloudflare
           </p>
         </div>
       </div>
