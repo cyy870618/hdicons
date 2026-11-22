@@ -1,9 +1,3 @@
 {
-  "categories": [
-    {
-      "name": "pt",
-      "label": "PT",
-      "builtin": false
-    }
-  ]
+  "categories": []
 }
